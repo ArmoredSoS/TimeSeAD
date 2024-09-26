@@ -29,8 +29,8 @@ class CsesDataset(BaseTSDataset):
 
         self.training = training
         self.ts_length = []
-        self.ds_train = pandas.DataFrame()
-        self.ds_test = pandas.DataFrame()
+        self.ds_train = numpy.zeros((1003, 256, 3))
+        self.ds_test = numpy.zeros((1003, 256, 3))
 
     def load_data(self):
 
@@ -41,23 +41,23 @@ class CsesDataset(BaseTSDataset):
                 E_X = []
                 E_Y = []
                 E_Z = []
-                time = []
+                #time = []
 
                 try:
                     with h5py.File(os.path.join(self.train_dir, file), 'r') as current_file:
                         E_X = current_file['A111_W'][:]
                         E_Y = current_file['A112_W'][:]
                         E_Z = current_file['A113_W'][:]
-                        time = current_file['VERSE_TIME'][:]
+                        #time = current_file['VERSE_TIME'][:]
                 except Exception as e:
                     print(e)
 
                 self.ts_length.append(len(E_X))
-                time = numpy.repeat(numpy.array(time, dtype=int).flatten(), 256)
-                E_X = numpy.array(E_X, dtype=int).flatten()
-                E_Y = numpy.array(E_Y, dtype=int).flatten()
-                E_Z = numpy.array(E_Z, dtype=int).flatten()
-                self.ds_train.append(pandas.DataFrame({'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index(time))
+                #time = numpy.repeat(numpy.array(time, dtype=int).flatten(), 256)
+                E_X = numpy.array(E_X, dtype=int)
+                E_Y = numpy.array(E_Y, dtype=int)
+                E_Z = numpy.array(E_Z, dtype=int)
+                self.ds_train.append(numpy.stack(E_X, E_Y, E_Z), axis = -1)
 
             return self.ds_train
         
@@ -66,23 +66,23 @@ class CsesDataset(BaseTSDataset):
             E_X = []
             E_Y = []
             E_Z = []
-            time = []
+            #time = []
 
             try:
                 with h5py.File(os.path.join(self.test_dir, file), 'r') as current_file:
                     E_X = current_file['A111_W'][:]
                     E_Y = current_file['A112_W'][:]
                     E_Z = current_file['A113_W'][:]
-                    time = current_file['VERSE_TIME'][:]
+                    #time = current_file['VERSE_TIME'][:]
             except Exception as e:
                     print(e)
 
             self.ts_length.append(len(E_X))
-            time = numpy.repeat((numpy.array(time, dtype=int).flatten()), 256)
+            #time = numpy.array(time, dtype=int)
             E_X = (numpy.array(E_X, dtype=int)).flatten()
             E_Y = (numpy.array(E_Y, dtype=int)).flatten()
             E_Z = (numpy.array(E_Z, dtype=int)).flatten()
-            self.ds_test.append(pandas.DataFrame({'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index(time))
+            self.ds_test.append(numpy.stack(E_X, E_Y, E_Z), axis = -1)
 
         return self.ds_test
     
@@ -115,11 +115,6 @@ class CsesDataset(BaseTSDataset):
     
     def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
 
-        #length of a time serie in this dataset
-        window = 256
-        #E_X, E_Y, E_Z
-        features = 3
-
         if not (0 <= index < len(self)):
             raise KeyError('Out of bounds')
 
@@ -128,17 +123,9 @@ class CsesDataset(BaseTSDataset):
 
         #Reshape to have 3 dimensions, as the fit method requires
         if not self.training:
-            data = self.ds_test.iloc[index : index + window].values
-            if len(data) < window:
-                data = numpy.pad(data, ((0, window - len(data)), (0, 0)), mode='edge')
-            
-            return torch.as_tensor(data).unsqueeze(0), index
-            
-        data = self.ds_train.iloc[index : index + window].values
-        if len(data) < window:
-            data = numpy.pad(data, ((0, window - len(data)), (0, 0)), mode='edge')
+            return torch.as_tensor(self.ds_test), index
 
-        return torch.as_tensor(data).unsqueeze(0), index
+        return torch.as_tensor(self.ds_train), index
     
     
     
