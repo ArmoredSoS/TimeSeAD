@@ -1,7 +1,7 @@
 import torch.utils
 import torch.utils.data
 import torch.utils.data.dataloader
-from dataset import BaseTSDataset
+from .dataset import BaseTSDataset
 from typing import Tuple, Union, Any, Dict, List
 from timesead.utils.metadata import DATA_DIRECTORY
 
@@ -9,6 +9,7 @@ import torch
 import h5py
 import pandas
 import os
+import numpy
 
 class CsesDataset(BaseTSDataset):
 
@@ -27,43 +28,69 @@ class CsesDataset(BaseTSDataset):
         self.test_dir = os.path.join(self.path, 'test')
 
         self.training = training
-        self.ts_length = None
-        self.ds_train = None
-        self.ds_test = None
+        self.ts_length = []
+        self.ds_train = pandas.DataFrame()
+        self.ds_test = pandas.DataFrame()
 
     def load_data(self):
 
-        E_X = []
-        E_Y = []
-        E_Z = []
-        time = []
-
         if self.training:
+
             for file in os.listdir(self.train_dir):
-                with h5py.File(file, 'r') as current_file:
-                    E_X.append(current_file['A111_W'][:])
-                    E_Y.append(current_file['A112_W'][:])
-                    E_Z.append(current_file['A113_W'][:])
-                    time.append(current_file['VERSE_TIME'][:])
+
+                E_X = []
+                E_Y = []
+                E_Z = []
+                time = []
+
+                try:
+                    with h5py.File(os.path.join(self.train_dir, file), 'r') as current_file:
+                        E_X = current_file['A111_W'][:]
+                        E_Y = current_file['A112_W'][:]
+                        E_Z = current_file['A113_W'][:]
+                        time = current_file['VERSE_TIME'][:]
+                except Exception as e:
+                    print(e)
+
                 self.ts_length.append(len(E_X))
-                self.ds_train = pandas.DataFrame({'time': time, 'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index('time')
+                time = numpy.repeat(numpy.array(time, dtype=int).flatten(), 256)
+                E_X = numpy.array(E_X, dtype=int).flatten()
+                E_Y = numpy.array(E_Y, dtype=int).flatten()
+                E_Z = numpy.array(E_Z, dtype=int).flatten()
+                self.ds_train.append(pandas.DataFrame({'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index(time))
+
             return self.ds_train
         
         for file in os.listdir(self.test_dir):
-            with h5py.File(file, 'r') as current_file:
-                E_X.append(current_file['A111_W'][:])
-                E_Y.append(current_file['A112_W'][:])
-                E_Z.append(current_file['A113_W'][:])
-                time.append(current_file['VERSE_TIME'][:])
-            self.ts_length.append(len(E_X))
-            self.ds_test = pandas.DataFrame({'time': time, 'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index('time')
-        return self.ds_test
 
+            E_X = []
+            E_Y = []
+            E_Z = []
+            time = []
+
+            try:
+                with h5py.File(os.path.join(self.test_dir, file), 'r') as current_file:
+                    E_X = current_file['A111_W'][:]
+                    E_Y = current_file['A112_W'][:]
+                    E_Z = current_file['A113_W'][:]
+                    time = current_file['VERSE_TIME'][:]
+            except Exception as e:
+                    print(e)
+
+            self.ts_length.append(len(E_X))
+            time = numpy.repeat((numpy.array(time, dtype=int).flatten()), 256)
+            E_X = (numpy.array(E_X, dtype=int)).flatten()
+            E_Y = (numpy.array(E_Y, dtype=int)).flatten()
+            E_Z = (numpy.array(E_Z, dtype=int)).flatten()
+            self.ds_test.append(pandas.DataFrame({'E_X':E_X, 'E_Y':E_Y, 'E_Z':E_Z}).set_index(time))
+
+        return self.ds_test
+    
     def __len__(self) -> int:
 
         if self.training:
-            return len(self.train_dir)
-        return len(self.test_dir)
+            return len(self.ds_train)
+        return len(self.ds_test)
             
     @property
     def seq_len(self) -> Union[int, List[int]]:
@@ -88,16 +115,30 @@ class CsesDataset(BaseTSDataset):
     
     def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
 
+        #length of a time serie in this dataset
+        window = 256
+        #E_X, E_Y, E_Z
+        features = 3
+
         if not (0 <= index < len(self)):
             raise KeyError('Out of bounds')
 
         if self.ds_test is None or self.ds_train is None:
             self.load_data()
 
+        #Reshape to have 3 dimensions, as the fit method requires
         if not self.training:
-            return (torch.as_tensor(self.ds_test[index]))
+            data = self.ds_test.iloc[index : index + window].values
+            if len(data) < window:
+                data = numpy.pad(data, ((0, window - len(data)), (0, 0)), mode='edge')
+            
+            return torch.as_tensor(data).unsqueeze(0), index
+            
+        data = self.ds_train.iloc[index : index + window].values
+        if len(data) < window:
+            data = numpy.pad(data, ((0, window - len(data)), (0, 0)), mode='edge')
 
-        return (torch.as_tensor(self.ds_train[index]))
+        return torch.as_tensor(data).unsqueeze(0), index
     
     
     
