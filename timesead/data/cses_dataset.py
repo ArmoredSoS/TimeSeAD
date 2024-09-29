@@ -27,66 +27,48 @@ class CsesDataset(BaseTSDataset):
         self.test_dir = os.path.join(self.path, 'test')
 
         self.training = training
-        self.ts_length = []
-        self.ds_train = []
-        self.ds_test = []
-        self.load_data()
-
-    def load_data(self):
-
-        if self.training:
-
-            for file in os.listdir(self.train_dir):
-
-                E_X = []
-                E_Y = []
-                E_Z = []
-
-                try:
-                    with h5py.File(os.path.join(self.train_dir, file), 'r') as current_file:
-                        E_X = current_file['A111_W'][:]
-                        E_Y = current_file['A112_W'][:]
-                        E_Z = current_file['A113_W'][:]
-                except Exception as e:
-                    print(e)
-                    continue
-
-                self.ts_length.append(min(len(E_X),len(E_Y),len(E_Z)))
-                E_X = numpy.array(E_X, dtype=int)
-                E_Y = numpy.array(E_Y, dtype=int)
-                E_Z = numpy.array(E_Z, dtype=int)
-                self.ds_train.append((E_X, E_Y, E_Z))
-
-            return self.ds_train
+        self.files_test = []
+        self.files_train = []
         
-        for file in os.listdir(self.test_dir):
+        if not training:
+            self.files_test = os.listdir(self.test_dir)
+        else:
+            self.files_train = os.listdir(self.train_dir)
+        
+        self.ts_length = []
 
-            E_X = []
-            E_Y = []
-            E_Z = []
+    def load_data(self, filepath):
+        
+        E_X = numpy.zeros((1100, 256))
+        E_Y = numpy.zeros((1100, 256))
+        E_Z = numpy.zeros((1100, 256))
 
-            try:
-                with h5py.File(os.path.join(self.test_dir, file), 'r') as current_file:
-                    E_X = current_file['A111_W'][:]
-                    E_Y = current_file['A112_W'][:]
-                    E_Z = current_file['A113_W'][:]
-            except Exception as e:
-                    print(e)
-                    continue
-
-            self.ts_length.append(min(len(E_X),len(E_Y),len(E_Z)))
-            E_X = (numpy.array(E_X, dtype=int))
-            E_Y = (numpy.array(E_Y, dtype=int))
-            E_Z = (numpy.array(E_Z, dtype=int))
-            self.ds_test.append((E_X, E_Y, E_Z))
-
-        return self.ds_test
+        try:
+            with h5py.File(filepath, 'r') as current_file:
+                E_X = numpy.array(current_file['A111_W'][:], dtype=int)
+                E_Y = numpy.array(current_file['A112_W'][:], dtype=int)
+                E_Z = numpy.array(current_file['A113_W'][:], dtype=int)
+                
+                max_len = max(len(E_X),len(E_Y),len(E_Z))
+                self.ts_length.append(max_len)      
+                
+                E_X = numpy.pad(E_X, ((0, 1100 - E_X.shape[0]), (0, 256 - E_X.shape[1])), mode='constant', constant_values=0)
+                E_Y = numpy.pad(E_Y, ((0, 1100 - E_Y.shape[0]), (0, 256 - E_Y.shape[1])), mode='constant', constant_values=0)
+                E_Z = numpy.pad(E_Z, ((0, 1100 - E_Z.shape[0]), (0, 256 - E_Z.shape[1])), mode='constant', constant_values=0)
+                
+                #print(f"|{E_X.size}|{E_Y.size}|{E_Z.size}|")     
+                        
+        except Exception as e:
+            print(e)
+        
+        if E_X.all and E_Y.all and E_Z.all:
+            return (E_X, E_Y, E_Z)
     
     def __len__(self) -> int:
 
         if self.training:
-            return len(self.ds_train)
-        return len(self.ds_test)
+            return len(self.files_train)
+        return len(self.files_test)
             
     @property
     def seq_len(self) -> Union[int, List[int]]:
@@ -111,13 +93,13 @@ class CsesDataset(BaseTSDataset):
     
     def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
 
-        if not (0 <= index < len(self)):
-            raise KeyError('Out of bounds')
-
-        if self.ds_test is None or self.ds_train is None:
-            self.load_data()
-
-        if not self.training:
-            return torch.as_tensor(self.ds_test[index]), index
-
-        return torch.as_tensor(self.ds_train[index]), index
+        if self.training:
+            dir = self.train_dir
+            file = self.files_train[index]
+        else:
+            dir = self.test_dir
+            file = self.files_test[index]
+            
+        filepath = os.path.join(dir, file)
+        
+        return torch.as_tensor(self.load_data(filepath),), index
