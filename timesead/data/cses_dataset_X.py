@@ -17,62 +17,62 @@ class CsesDataset(BaseTSDataset):
         
         if not os.path.exists(path):
             raise NotADirectoryError
-        self.path = path
 
-        if not os.path.exists(os.path.join(self.path, 'training')):
+        if not os.path.exists(os.path.join(path, 'training')):
             raise NotADirectoryError
-        self.train_dir = os.path.join(self.path, 'training')
+        train_dir = os.path.join(path, 'training')
 
-        if not os.path.exists(os.path.join(self.path, 'test')):
+        if not os.path.exists(os.path.join(path, 'test')):
             raise NotADirectoryError
-        self.test_dir = os.path.join(self.path, 'test')
+        test_dir = os.path.join(path, 'test')
 
-        self.training = training
-        self.files_test = []
-        self.files_train = []
-        self.scaler = StandardScaler()
+        self.work_files = []
+        file_list = os.listdir(train_dir) if training else os.listdir(test_dir)
+        work_dir = train_dir if training else test_dir
+        for file in file_list:
+            current_file = os.path.join(work_dir, file)
+            self.work_files.append(current_file)
 
-        if not training:
-            self.files_test = os.listdir(self.test_dir)
-        else:
-            self.files_train = os.listdir(self.train_dir)
-        
-        self.ts_length = []
+        self.training = training 
+        self.E_X = self.load_data()
 
-    def load_data(self, filepath):
-        
-        E_X = numpy.zeros((1100, 256))
-        E_X_res = numpy.zeros((1, 1100, 1))
+    def load_data(self):
 
-        try:
-            with h5py.File(filepath, 'r') as current_file:
+        E_X = []
 
-                E_X = numpy.array(current_file['A111_W'][:], dtype=int)
-                #E_X = E_X[300:]      
+        for file in self.work_files:
+            try:
+                with h5py.File(file, 'r') as current_file:
 
-                E_X_res = numpy.mean(E_X, axis=1)
-                E_X_res = numpy.pad(E_X_res, (0, 1100 - len(E_X)), mode='constant', constant_values=0)    
-                E_X_res = numpy.expand_dims(E_X_res, axis=(0,2))
-                        
-        except Exception as e:
-            print(e)
-        
-        if E_X_res.all:
-            return E_X_res
+                    E_X_temp = numpy.array(current_file['A111_W'][:], dtype=int)
+
+                    if E_X_temp.shape[0] < 1000:
+                        E_X_temp = numpy.pad(E_X_temp, ((0, 1000 - E_X_temp.shape[0]), (0, 256 - E_X_temp.shape[1])), mode='constant', constant_values=0)
+                    
+                    E_X.append(E_X_temp[:1000, :256])
+                    #E_X_temp = E_X_temp.flatten()
+                            
+            except Exception as e:
+                print(e)
+            
+
+        E_X = numpy.array(E_X, dtype=int)
+        E_X = numpy.expand_dims(E_X, 3)
+        E_X = (E_X - E_X.mean())/E_X.std()
+        #print(E_X.shape)
+
+        return E_X
     
     def __len__(self) -> int:
-
-        if self.training:
-            return len(self.files_train)
-        return len(self.files_test)
+        return self.E_X.shape[0]
             
     @property
     def seq_len(self) -> Union[int, List[int]]:
-        return 1100
+        return self.E_X.shape[1]
     
     @property   
     def num_features(self) -> Union[int, Tuple[int, ...]]:
-        return 1
+        return self.E_X.shape[2]
     
     @staticmethod
     def get_default_pipeline() -> Dict[str, Dict[str, Any]]:
@@ -87,15 +87,5 @@ class CsesDataset(BaseTSDataset):
     def get_feature_names() -> List[str]:
         return ['E_X']
     
-    def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-
-        if self.training:
-            dir = self.train_dir
-            file = self.files_train[index]
-        else:
-            dir = self.test_dir
-            file = self.files_test[index]
-
-        filepath = os.path.join(dir, file)
-        
-        return torch.as_tensor(self.load_data(filepath),), index
+    def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:   
+        return torch.as_tensor(self.E_X[index],), index
