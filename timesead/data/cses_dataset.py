@@ -4,6 +4,7 @@ import torch.utils.data.dataloader
 from .dataset import BaseTSDataset
 from typing import Tuple, Union, Any, Dict, List
 from timesead.utils.metadata import DATA_DIRECTORY
+from sklearn.preprocessing import StandardScaler
 
 import torch
 import h5py
@@ -16,67 +17,67 @@ class CsesDataset(BaseTSDataset):
         
         if not os.path.exists(path):
             raise NotADirectoryError
-        self.path = path
 
-        if not os.path.exists(os.path.join(self.path, 'training')):
+        if not os.path.exists(os.path.join(path, 'training')):
             raise NotADirectoryError
-        self.train_dir = os.path.join(self.path, 'training')
+        train_dir = os.path.join(path, 'training')
 
-        if not os.path.exists(os.path.join(self.path, 'test')):
+        if not os.path.exists(os.path.join(path, 'test')):
             raise NotADirectoryError
-        self.test_dir = os.path.join(self.path, 'test')
+        test_dir = os.path.join(path, 'test')
 
-        self.training = training
-        self.files_test = []
-        self.files_train = []
-        
-        if not training:
-            self.files_test = os.listdir(self.test_dir)
-        else:
-            self.files_train = os.listdir(self.train_dir)
-        
-        self.ts_length = []
+        self.work_files = []
+        file_list = os.listdir(train_dir) if training else os.listdir(test_dir)
+        work_dir = train_dir if training else test_dir
+        for file in file_list:
+            current_file = os.path.join(work_dir, file)
+            self.work_files.append(current_file)
 
-    def load_data(self, filepath):
-        
-        E_X = numpy.zeros((1100, 256))
-        E_Y = numpy.zeros((1100, 256))
-        E_Z = numpy.zeros((1100, 256))
+        self.training = training 
+        self.E = self.load_data()
 
-        try:
-            with h5py.File(filepath, 'r') as current_file:
-                E_X = numpy.array(current_file['A111_W'][:], dtype=int)
-                E_Y = numpy.array(current_file['A112_W'][:], dtype=int)
-                E_Z = numpy.array(current_file['A113_W'][:], dtype=int)
-                
-                max_len = max(len(E_X),len(E_Y),len(E_Z))
-                self.ts_length.append(max_len)      
-                
-                E_X = numpy.pad(E_X, ((0, 1100 - E_X.shape[0]), (0, 256 - E_X.shape[1])), mode='constant', constant_values=0)
-                E_Y = numpy.pad(E_Y, ((0, 1100 - E_Y.shape[0]), (0, 256 - E_Y.shape[1])), mode='constant', constant_values=0)
-                E_Z = numpy.pad(E_Z, ((0, 1100 - E_Z.shape[0]), (0, 256 - E_Z.shape[1])), mode='constant', constant_values=0)
-                
-                #print(f"|{E_X.size}|{E_Y.size}|{E_Z.size}|")     
-                        
-        except Exception as e:
-            print(e)
+    def load_data(self):
         
-        if E_X.all and E_Y.all and E_Z.all:
-            return (E_X, E_Y, E_Z)
+        E = []
+
+        for file in self.work_files:
+            try:
+                with h5py.File(file, 'r') as current_file:
+
+                    E_temp = []
+
+                    E_X_temp = numpy.array(current_file['A111_W'][:], dtype=int)
+                    E_Y_temp = numpy.array(current_file['A112_W'][:], dtype=int)
+                    E_Z_temp = numpy.array(current_file['A113_W'][:], dtype=int)    
+                    
+                    if E_X_temp.shape[0] < 1000:
+                        E_X_temp = numpy.pad(E_X_temp, ((0, 1000 - E_X_temp.shape[0]), (0, 256 - E_X_temp.shape[1])), mode='constant', constant_values=0)
+                    if E_Y_temp.shape[0] < 1000:
+                        E_Y_temp = numpy.pad(E_Y_temp, ((0, 1000 - E_Y_temp.shape[0]), (0, 256 - E_Y_temp.shape[1])), mode='constant', constant_values=0)
+                    if E_Z_temp.shape[0] < 1000:
+                        E_Z_temp = numpy.pad(E_Z_temp, ((0, 1000 - E_Z_temp.shape[0]), (0, 256 - E_Z_temp.shape[1])), mode='constant', constant_values=0)
+
+                    E_temp = numpy.stack([E_X_temp[:1000, :256], E_Y_temp[:1000, :256], E_Z_temp[:1000, :256]], axis=1)
+                    E.append(E_temp)
+                            
+            except Exception as e:
+                print(e)
+
+        E = numpy.array(E, dtype=int)
+        E = (E - E.mean())/E.std()
+
+        return E
     
     def __len__(self) -> int:
-
-        if self.training:
-            return len(self.files_train)
-        return len(self.files_test)
+        return self.E.shape[0]
             
     @property
     def seq_len(self) -> Union[int, List[int]]:
-        return self.ts_length
+        return self.E.shape[1]
     
     @property   
     def num_features(self) -> Union[int, Tuple[int, ...]]:
-        return 3
+        return self.E.shape[2]
     
     @staticmethod
     def get_default_pipeline() -> Dict[str, Dict[str, Any]]:
@@ -92,14 +93,5 @@ class CsesDataset(BaseTSDataset):
         return ['E_X', 'E_Y', 'E_Z']
     
     def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-
-        if self.training:
-            dir = self.train_dir
-            file = self.files_train[index]
-        else:
-            dir = self.test_dir
-            file = self.files_test[index]
-            
-        filepath = os.path.join(dir, file)
-        
-        return torch.as_tensor(self.load_data(filepath),), index
+        dummy_targets = numpy.zeros((self.E.shape[1], self.E.shape[2], 1))
+        return torch.as_tensor(self.E[index]), torch.as_tensor(dummy_targets)

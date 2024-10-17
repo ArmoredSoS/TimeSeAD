@@ -1,3 +1,4 @@
+
 import torch.utils
 import torch.utils.data
 import torch.utils.data.dataloader
@@ -36,6 +37,12 @@ class CsesDataset(BaseTSDataset):
         self.training = training 
         self.E_X = self.load_data()
 
+    def polar_conversion(self, x, y, z):
+        r = numpy.sqrt(x**2 + y**2 + z**2)
+        theta = numpy.arctan2(y, x)
+        phi = numpy.arctan2(numpy.sqrt(x**2 + y**2), z)
+        return r, theta, phi
+
     def load_data(self):
 
         E_X = []
@@ -45,20 +52,32 @@ class CsesDataset(BaseTSDataset):
                 with h5py.File(file, 'r') as current_file:
 
                     E_X_temp = numpy.array(current_file['A111_W'][:], dtype=float)
+                    E_Y_temp = numpy.array(current_file['A112_W'][:], dtype=float)
+                    E_Z_temp = numpy.array(current_file['A113_W'][:], dtype=float)
 
                     if E_X_temp.shape[0] < 1000:
                         E_X_temp = numpy.pad(E_X_temp, ((0, 1000 - E_X_temp.shape[0]), (0, 256 - E_X_temp.shape[1])), mode='constant', constant_values=0)
-                    
-                    E_X.append(E_X_temp[:1000, :256])
-                    #E_X_temp = E_X_temp.flatten()
+                    if E_Y_temp.shape[0] < 1000:
+                        E_Y_temp = numpy.pad(E_Y_temp, ((0, 1000 - E_Y_temp.shape[0]), (0, 256 - E_Y_temp.shape[1])), mode='constant', constant_values=0)
+                    if E_Z_temp.shape[0] < 1000:
+                        E_Z_temp = numpy.pad(E_Z_temp, ((0, 1000 - E_Z_temp.shape[0]), (0, 256 - E_Z_temp.shape[1])), mode='constant', constant_values=0)                        
+
+                    E_X_temp = E_X_temp.flatten()
+                    E_Y_temp = E_Y_temp.flatten()
+                    E_Z_temp = E_Z_temp.flatten()
+
+                    #print(f'{E_X_temp.shape}|{E_Y_temp.shape}|{E_Z_temp.shape}')
+
+                    r, theta, phi = self.polar_conversion(E_X_temp[:256000], E_Y_temp[:256000], E_Z_temp[:256000])
+                    E_X.append(numpy.stack([r, theta, phi], axis=1))
                             
             except Exception as e:
-                print(e)
+                print(e)   
             
-
         E_X = numpy.array(E_X, dtype=float)
-        E_X = numpy.expand_dims(E_X, 3)
         E_X = (E_X - E_X.mean())/E_X.std()
+        E_X = numpy.expand_dims(E_X, 3)
+        print(E_X.shape)
 
         return E_X
     
@@ -84,9 +103,8 @@ class CsesDataset(BaseTSDataset):
     
     @staticmethod
     def get_feature_names() -> List[str]:
-        return ['E_X']
+        return ['E_X','E_Y','E_Z']
     
-    def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
+    def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:   
         dummy_targets = numpy.zeros((self.E_X.shape[1], self.E_X.shape[2], 1))
-        print(f'{self.E.shape}|{dummy_targets.shape}')
-        return (torch.as_tensor(self.E_X[index])), (torch.as_tensor(dummy_targets))
+        return torch.as_tensor(self.E_X[index]), torch.as_tensor(dummy_targets)

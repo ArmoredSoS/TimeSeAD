@@ -49,16 +49,17 @@ class CsesDataset(BaseTSDataset):
                     if E_X_temp.shape[0] < 1000:
                         E_X_temp = numpy.pad(E_X_temp, ((0, 1000 - E_X_temp.shape[0]), (0, 256 - E_X_temp.shape[1])), mode='constant', constant_values=0)
                     
-                    E_X.append(E_X_temp[:1000, :256])
-                    #E_X_temp = E_X_temp.flatten()
+                    E_X_temp = E_X_temp.flatten()
+                    E_X.append(numpy.stack([E_X_temp[:256000], E_X_temp[:256000], E_X_temp[:256000]], axis=1))
                             
             except Exception as e:
                 print(e)
             
 
         E_X = numpy.array(E_X, dtype=float)
-        E_X = numpy.expand_dims(E_X, 3)
         E_X = (E_X - E_X.mean())/E_X.std()
+        E_X = numpy.expand_dims(E_X, 3)
+        print(E_X.shape)
 
         return E_X
     
@@ -87,6 +88,5 @@ class CsesDataset(BaseTSDataset):
         return ['E_X']
     
     def __getitem__(self, index: int) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
-        dummy_targets = numpy.zeros((self.E_X.shape[1], self.E_X.shape[2], 1))
-        print(f'{self.E.shape}|{dummy_targets.shape}')
-        return (torch.as_tensor(self.E_X[index])), (torch.as_tensor(dummy_targets))
+        dummy_targets = numpy.zeros((self.E_X.shape[1], self.E_X.shape[2], 1))  
+        return torch.as_tensor(self.E_X[index]), torch.as_tensor(dummy_targets)
