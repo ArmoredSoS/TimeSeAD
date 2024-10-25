@@ -1,5 +1,5 @@
 from torch.utils.data import DataLoader
-from timesead.data.cses_dataset_polar import CsesDataset
+from timesead.data.cses_dataset_flatX import CsesDataset
 from timesead.models.baselines.kmeans import KMeansAD
 import matplotlib.pyplot as plot
 import numpy
@@ -18,7 +18,7 @@ def main():
     Model = KMeansAD(256, 256000)
     Model.fit(cses_train_dl)
 
-    plots_dir = 'Plots_kmeans_polar_2'
+    plots_dir = 'Plots_kmeans_test'
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 

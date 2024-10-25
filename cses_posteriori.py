@@ -42,22 +42,22 @@ if __name__ == '__main__':
     E = load_data()
     E = E[:, :, 0, 0]
 
-    plots_dir = 'Plots_posteriori_X_2'
+    plots_dir = 'Plots_posteriori_X_3'
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
-    
+    anomalies = numpy.zeros((E.shape[0], E.shape[1]))
+
     for item in range(len(E)):
-        anomalies = numpy.zeros(E.shape[1])
         for data_point in range(len(E[item])):
-            for i in range(100):
-                if (abs(abs(E[item, data_point]) - abs(E[item, data_point - i])) > 0.015 and data_point >= 100):
-                    anomalies[data_point] = 1
+            for i in range(200):
+                if (abs(abs(E[item, data_point]) - abs(E[item, data_point - i])) > 0.015 and data_point >= 200):
+                    anomalies[item, data_point] = 1
 
         plot.figure(figsize=(12, 6))
         plot.plot(E[item, :], label='E_normalized', color='blue', alpha=0.6)
 
-        anomalies_graph = numpy.where(anomalies > 0)
+        anomalies_graph = numpy.where(anomalies[item] > 0)
         plot.scatter(anomalies_graph, E[item, anomalies_graph], color='red', label='Anomalies', s=10)
 
         plot.title('Test')
@@ -66,6 +66,8 @@ if __name__ == '__main__':
 
         plot.savefig(os.path.join(plots_dir, f'{item}.png'))
         plot.close()
+
+    numpy.save("anomalies.npy", anomalies)
                 
     
                 
